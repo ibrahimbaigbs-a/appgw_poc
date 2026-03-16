@@ -1,0 +1,172 @@
+locals {
+  # Scoped to a single instance pair folder: env/<Env>/Region/<Region>/<instance>/
+  # One Terraform run = one resilient pair (primary + secondary).
+  # Each pair has its own isolated state file, so parallel runs across pairs are safe.
+  instance_path = abspath("${path.module}/${var.env_root_path}/${var.environment}/Region/${var.region}/${var.instance}")
+
+  primary_files   = fileset(local.instance_path, "*-p.json")
+  secondary_files = fileset(local.instance_path, "*-s.json")
+  all_files       = fileset(local.instance_path, "*-[ps].json")
+
+  # Any JSON file in the folder that is NOT a recognised -p.json or -s.json.
+  unexpected_files = toset([
+    for f in fileset(local.instance_path, "*.json") : f
+    if !can(regex("-[ps]\\.json$", f))
+  ])
+
+  gateways = {
+    for f in local.all_files :
+    replace(replace(basename(f), ".json", ""), "-", "_") => jsondecode(file("${local.instance_path}/${f}"))
+  }
+}
+
+check "primary_secondary_pairing" {
+  assert {
+    condition     = length(local.primary_files) > 0 && length(local.secondary_files) > 0
+    error_message = "Instance folder '${var.instance}' must contain both a -p.json (primary) and a -s.json (secondary) file for resilient deployment."
+  }
+}
+
+check "distinct_resource_groups" {
+  assert {
+    condition = length(distinct(
+      [for k, v in local.gateways : v.resource_group_name]
+    )) == length(local.gateways)
+    error_message = "Primary and secondary gateways must use different resource_group_name values to avoid Azure name conflicts when sharing the same gateway name."
+  }
+}
+
+# Hard plan-time failure — blocks apply, unlike check{} which only warns.
+# Prevents silently-ignored JSON files (e.g. appgw-01-t.json) from giving
+# operators a false sense that their config was deployed.
+resource "terraform_data" "validate_instance_files" {
+  lifecycle {
+    precondition {
+      condition     = length(local.unexpected_files) == 0
+      error_message = "Instance folder '${var.instance}' contains unexpected JSON file(s): ${join(", ", local.unexpected_files)}. Only *-p.json (primary) and *-s.json (secondary) are valid."
+    }
+  }
+}
+
+module "app_gateway" {
+  for_each = local.gateways
+
+  source = "../modules/app-gateway"
+
+  name                = each.value.name
+  resource_group_name = each.value.resource_group_name
+  location            = try(each.value.location, "westus2")
+
+  gateway_ip_configuration = {
+    name      = "gwipcfg"
+    subnet_id = each.value.app_gateway_subnet_id
+  }
+
+  public_ip_address_configuration = {
+    create_public_ip_enabled = true
+    public_ip_name           = try(each.value.public_ip_name, "pip-${each.value.name}")
+    allocation_method        = "Static"
+    sku                      = "Standard"
+    sku_tier                 = "Regional"
+    zones                    = ["1", "2", "3"]
+  }
+
+  frontend_ports = {
+    http = {
+      name = "port-80"
+      port = 80
+    }
+    https = {
+      name = "port-443"
+      port = 443
+    }
+  }
+
+  backend_address_pools = {
+    web_pool = {
+      name         = "pool-web"
+      ip_addresses = toset(each.value.backend_ip_addresses)
+    }
+  }
+
+  probes = {
+    web = {
+      name                = "probe-web"
+      protocol            = "Http"
+      path                = "/health"
+      interval            = 30
+      timeout             = 30
+      unhealthy_threshold = 3
+      host                = each.value.backend_ip_addresses[0]
+      match = {
+        status_code = ["200-399"]
+      }
+    }
+  }
+
+  backend_http_settings = {
+    web_http = {
+      name                  = "bhs-web-http"
+      port                  = 80
+      protocol              = "Http"
+      cookie_based_affinity = "Disabled"
+      request_timeout       = 30
+      probe_name            = "probe-web"
+    }
+  }
+
+  http_listeners = {
+    http_listener = {
+      name                           = "lst-http"
+      frontend_port_name             = "port-80"
+      frontend_ip_configuration_name = "${each.value.name}-feip"
+      protocol                       = "Http"
+      host_names                     = try(each.value.host_names, ["app.contoso.com"])
+    }
+  }
+
+  request_routing_rules = {
+    web_rule = {
+      name                       = "rr-web"
+      rule_type                  = "Basic"
+      http_listener_name         = "lst-http"
+      backend_address_pool_name  = "pool-web"
+      backend_http_settings_name = "bhs-web-http"
+      priority                   = 100
+    }
+  }
+
+  ssl_certificates = try(each.value.ssl_certificate_key_vault_secret_id, null) != null ? {
+    cert = {
+      name                = "web-cert"
+      key_vault_secret_id = each.value.ssl_certificate_key_vault_secret_id
+    }
+  } : null
+
+  diagnostic_settings = try(each.value.log_analytics_workspace_id, null) != null ? {
+    law = {
+      name                           = "diag-${each.value.name}"
+      workspace_resource_id          = each.value.log_analytics_workspace_id
+      log_analytics_destination_type = "Dedicated"
+      log_groups                     = ["allLogs"]
+      metric_categories              = ["AllMetrics"]
+    }
+  } : {}
+
+  autoscale_configuration = try(each.value.autoscale_configuration, {
+    min_capacity = 1
+    max_capacity = 2
+  })
+
+  sku = try(each.value.sku, {
+    name = "Standard_v2"
+    tier = "Standard_v2"
+  })
+
+  enable_telemetry = false
+  tags = try(each.value.tags, {
+    environment = lower(var.environment)
+    workload    = "network-ingress"
+    managedBy   = "terraform"
+  })
+}

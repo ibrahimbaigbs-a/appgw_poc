@@ -1,0 +1,148 @@
+1. ServiceNow Payload Draft
+Use one payload contract for create and update. Treat it as full desired state for the targeted gateway.
+
+Payload schema draft:
+
+request_id: string
+customer: string
+environment: dev | test | prod
+action: plan | apply | destroy
+change_ticket: string
+target:
+target.region: westus2 | westus | eastus
+target.gateway_key: logical key for state isolation, for example primary-core
+gateway: object matching Terraform input for one gateway
+gateway.location: required, no default in prod
+gateway.name, resource_group_name, app_gateway_subnet_id, public_ip_name: required
+gateway.frontend_ports, backend_address_pools, backend_http_settings, http_listeners, request_routing_rules: maps for flexible updates
+gateway.probes, ssl_certificates, diagnostic_settings, waf_configuration, autoscale_configuration: optional
+metadata:
+metadata.requested_by, business_unit, cost_center, approval_group: strings
+Example payload draft:
+{
+"request_id": "SNOW-CHG-0098123",
+"customer": "acme",
+"environment": "prod",
+"action": "apply",
+"change_ticket": "CHG0098123",
+"target": {
+"region": "westus2",
+"gateway_key": "primary-core"
+},
+"gateway": {
+"location": "westus2",
+"name": "agw-acme-prod-wus2-01",
+"resource_group_name": "rg-acme-prod-network-wus2",
+"app_gateway_subnet_id": "/subscriptions/.../subnets/snet-appgw",
+"public_ip_name": "pip-acme-prod-wus2-agw-01",
+"frontend_ports": {
+"http": { "name": "port-80", "port": 80 },
+"https": { "name": "port-443", "port": 443 }
+},
+"backend_address_pools": {
+"app_pool": { "name": "pool-app", "ip_addresses": ["10.20.1.10", "10.20.1.11"] }
+},
+"backend_http_settings": {
+"app_http": {
+"name": "bhs-app-http",
+"port": 80,
+"protocol": "Http",
+"cookie_based_affinity": "Disabled",
+"request_timeout": 30
+}
+},
+"http_listeners": {
+"app_listener": {
+"name": "lst-app-http",
+"frontend_port_name": "port-80",
+"frontend_ip_configuration_name": "agw-acme-prod-wus2-01-feip",
+"protocol": "Http",
+"host_names": ["app.acme.com"]
+}
+},
+"request_routing_rules": {
+"app_rule": {
+"name": "rr-app",
+"rule_type": "Basic",
+"http_listener_name": "lst-app-http",
+"backend_address_pool_name": "pool-app",
+"backend_http_settings_name": "bhs-app-http",
+"priority": 100
+}
+},
+"autoscale_configuration": { "min_capacity": 2, "max_capacity": 6 },
+"tags": {
+"environment": "prod",
+"customer": "acme",
+"ticket": "CHG0098123"
+}
+},
+"metadata": {
+"requested_by": "svcnow.integration",
+"business_unit": "retail",
+"cost_center": "CC1234",
+"approval_group": "network-platform"
+}
+}
+
+2. GitHub Actions Contract Draft
+Workflow name: app-gateway-deploy
+
+Inputs:
+
+customer
+environment
+region
+gateway_key
+action: plan | apply | destroy
+payload_json: full ServiceNow payload
+tf_module_ref: optional module version or branch
+auto_destroy_after_apply: boolean for non-prod only
+Secrets:
+
+AZURE_CLIENT_ID
+AZURE_TENANT_ID
+AZURE_SUBSCRIPTION_ID
+TFSTATE_STORAGE_ACCOUNT
+TFSTATE_CONTAINER
+Optional per-env subscription secret if subscriptions differ by env
+Jobs:
+
+validate
+parse_payload
+terraform_plan
+manual_approval (required for apply/destroy in prod)
+terraform_apply_or_destroy
+post_status_to_servicenow
+Key behavior:
+
+Build backend key as customers/{customer}/{environment}/app-gateway/{region}/{gateway_key}.tfstate
+Use OIDC auth only
+Concurrency group as agw-{customer}-{environment}-{region}-{gateway_key}
+Apply only one gateway_key per run
+Store plan file as artifact and include summary in PR/comment/status
+Reject payload if required fields are missing or map keys are unstable
+3. Repo/State Layout Draft
+Customer config repo layout:
+
+infra/app-gateway/roots/prod/westus2/main.tf
+infra/app-gateway/roots/prod/westus/main.tf
+infra/app-gateway/roots/prod/eastus/main.tf
+infra/app-gateway/payloads/schema/agw-request-schema.json
+infra/app-gateway/catalog/customers/acme/prod/westus2/primary-core.json
+infra/app-gateway/catalog/customers/acme/prod/westus/secondary-core.json
+infra/app-gateway/catalog/customers/acme/prod/eastus/dr-core.json
+State management best approach:
+
+Remote backend in Azure Storage, one state key per gateway per region
+Enable blob versioning and soft delete
+Enforce RBAC for pipeline identity only
+Never allow local state in CI/CD
+Run nightly plan-only drift check and report to ServiceNow
+4. Flexibility Rules For Future Updates
+
+Keep map keys immutable once created, only values change
+For add listener/backend/rule, add new map key
+For remove, delete key intentionally through approved change
+Enforce naming standards in payload validation
+Use policy checks to prevent risky deletes in prod unless override is approved
