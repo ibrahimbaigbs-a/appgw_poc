@@ -75,6 +75,9 @@ jobs:
         id: scope
         shell: bash
         run: |
+          all_env_json=""
+          changed=""
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ inputs.role }}" = "both" ]; then
               matrix=$(jq -cn \
@@ -93,13 +96,18 @@ jobs:
                 --arg role "${{ inputs.role }}" \
                 '[{environment:$env, region:$reg, instance:$ins, role:$role}]')
             fi
+
+            echo "::notice::Manual target -> env=${{ inputs.environment }}, region=${{ inputs.region }}, instance=${{ inputs.instance }}, role=${{ inputs.role }}"
           else
             base_sha="${{ github.event.pull_request.base.sha }}"
             head_sha="${{ github.event.pull_request.head.sha }}"
 
+            all_env_json=$(git diff --name-only "$base_sha" "$head_sha" \
+              | awk '/^env\/.+\/Region\/.+\/.+\/.+\.json$/ {print}' \
+              | sort -u)
+
             changed=$(git diff --name-only "$base_sha" "$head_sha" \
-              | grep -E '^env/.+/Region/.+/.+/.+-[ps]\.json$' \
-              | awk -F'/' '{
+              | awk -F'/' '/^env\/.+\/Region\/.+\/.+\/.+-[ps]\.json$/ {
                   role="";
                   if ($6 ~ /-p\.json$/) role="p";
                   else if ($6 ~ /-s\.json$/) role="s";
@@ -119,9 +127,44 @@ jobs:
                   '{environment:$env, region:$reg, instance:$ins, role:$role}'
               done | jq -sc '.')
             fi
+
+            if [ -n "$all_env_json" ]; then
+              echo "::notice::Changed env JSON files:"
+              echo "$all_env_json"
+            fi
           fi
 
           has_scope=$([ "$matrix" != "[]" ] && echo true || echo false)
+
+          if [ "$has_scope" = "true" ]; then
+            echo "::notice::Deployment scope matrix: $matrix"
+          else
+            echo "::warning::No deployable *-p.json or *-s.json changes detected in this run."
+          fi
+
+          {
+            echo "### Detect Scope"
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "- Trigger: workflow_dispatch"
+              echo "- Target: env=${{ inputs.environment }}, region=${{ inputs.region }}, instance=${{ inputs.instance }}, role=${{ inputs.role }}"
+            else
+              echo "- Trigger: pull_request"
+              if [ -n "$all_env_json" ]; then
+                echo "- Changed env JSON files:"
+                echo '```text'
+                echo "$all_env_json"
+                echo '```'
+              else
+                echo "- Changed env JSON files: none"
+              fi
+            fi
+            echo "- has_scope: $has_scope"
+            echo "- matrix:"
+            echo '```json'
+            echo "$matrix" | jq .
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "has_scope=$has_scope" >> "$GITHUB_OUTPUT"
 
