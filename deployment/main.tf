@@ -78,6 +78,7 @@ module "app_gateway" {
   name                = each.value.name
   resource_group_name = each.value.resource_group_name
   location            = try(each.value.location, "westus2")
+  zones               = try(each.value.app_gateway_zones, null)
 
   gateway_ip_configuration = try(each.value.gateway_ip_configuration, {
     name      = "gwipcfg"
@@ -90,7 +91,7 @@ module "app_gateway" {
     allocation_method        = "Static"
     sku                      = "Standard"
     sku_tier                 = "Regional"
-    zones                    = ["1", "2", "3"]
+    zones                    = try(each.value.public_ip_zones, null)
   })
 
   frontend_ports = length(try(each.value.frontend_ports, {})) > 0 ? each.value.frontend_ports : {

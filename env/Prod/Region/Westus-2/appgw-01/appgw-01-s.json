@@ -4,6 +4,8 @@
     "location": "westus",
     "app_gateway_subnet_id": "/subscriptions/5ade8a7e-f940-457e-9b4e-65bd6e1d0a29/resourceGroups/secondaryagw-rg/providers/Microsoft.Network/virtualNetworks/s-agw-vnet/subnets/agw-snet-01",
     "public_ip_name": "pip-agw-prod-01",
+    "app_gateway_zones": null,
+    "public_ip_zones": null,
     "backend_ip_addresses": [],
     "frontend_ports": {
         "http": {
