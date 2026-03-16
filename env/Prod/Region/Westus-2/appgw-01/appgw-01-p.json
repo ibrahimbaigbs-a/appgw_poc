@@ -1,12 +1,11 @@
 {
     "name": "agw-prod-01",
-    "resource_group_name": "rg-network-prod-westus2",
+    "resource_group_name": "MigrationRG",
     "location": "westus2",
-    "app_gateway_subnet_id": "/subscriptions/<subscription-id>/resourceGroups/rg-network-prod-westus2/providers/Microsoft.Network/virtualNetworks/vnet-prod-westus2/subnets/snet-appgw-westus2",
+    "app_gateway_subnet_id": "/subscriptions/5ade8a7e-f940-457e-9b4e-65bd6e1d0a29/resourceGroups/migrationrg/providers/Microsoft.Network/virtualNetworks/MigrationRG-vnet/subnets/appgatewaysnet",
     "public_ip_name": "pip-agw-prod-01",
     "backend_ip_addresses": [
-        "10.20.1.10",
-        "10.20.1.11"
+        "10.0.0.4"
     ],
     "host_names": [
         "app.contoso.com"
