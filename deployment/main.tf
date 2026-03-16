@@ -111,20 +111,7 @@ module "app_gateway" {
     }
   } : {})
 
-  probes = length(try(each.value.probes, {})) > 0 ? each.value.probes : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
-    web = {
-      name                = "probe-web"
-      protocol            = "Http"
-      path                = "/health"
-      interval            = 30
-      timeout             = 30
-      unhealthy_threshold = 3
-      host                = try(each.value.backend_ip_addresses[0], null)
-      match = {
-        status_code = ["200-399"]
-      }
-    }
-  } : null)
+  probes = try(each.value.probes, null)
 
   backend_http_settings = length(try(each.value.backend_http_settings, {})) > 0 ? each.value.backend_http_settings : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web_http = {
