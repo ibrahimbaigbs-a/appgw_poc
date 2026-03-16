@@ -41,6 +41,12 @@ on:
         options:
           - plan
           - apply
+          - destroy
+      confirm_destroy:
+        description: Type DESTROY to confirm a destroy operation
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -75,6 +81,9 @@ jobs:
         id: scope
         shell: bash
         run: |
+          all_env_json=""
+          changed=""
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ inputs.role }}" = "both" ]; then
               matrix=$(jq -cn \
@@ -93,18 +102,49 @@ jobs:
                 --arg role "${{ inputs.role }}" \
                 '[{environment:$env, region:$reg, instance:$ins, role:$role}]')
             fi
+
+            echo "::notice::Manual target -> env=${{ inputs.environment }}, region=${{ inputs.region }}, instance=${{ inputs.instance }}, role=${{ inputs.role }}"
           else
             base_sha="${{ github.event.pull_request.base.sha }}"
             head_sha="${{ github.event.pull_request.head.sha }}"
 
-            changed=$(git diff --name-only "$base_sha" "$head_sha" \
-              | grep -E '^env/.+/Region/.+/.+/.+-[ps]\.json$' \
-              | awk -F'/' '{
-                  role="";
-                  if ($6 ~ /-p\.json$/) role="p";
-                  else if ($6 ~ /-s\.json$/) role="s";
-                  if (role != "") print $2 ":" $4 ":" $5 ":" role;
-                }' \
+            all_env_json=$(git diff --name-status "$base_sha" "$head_sha" \
+              | awk -F'\t' '
+                  function print_if_env_json(path) {
+                    if (path ~ /^env\/.+\/Region\/.+\/.+\/.+\.json$/) print path;
+                  }
+                  {
+                    status = $1;
+                    if (status ~ /^R[0-9]+$/ || status ~ /^C[0-9]+$/) {
+                      print_if_env_json($2);
+                      print_if_env_json($3);
+                    } else {
+                      print_if_env_json($2);
+                    }
+                  }
+                ' \
+              | sort -u)
+
+            changed=$(git diff --name-status "$base_sha" "$head_sha" \
+              | awk -F'\t' '
+                  function emit_scope(path, a, role) {
+                    if (path !~ /^env\/.+\/Region\/.+\/.+\/.+-[ps]\.json$/) return;
+                    split(path, a, "/");
+                    role = "";
+                    if (a[6] ~ /-p\.json$/) role = "p";
+                    else if (a[6] ~ /-s\.json$/) role = "s";
+                    if (role != "") print a[2] ":" a[4] ":" a[5] ":" role;
+                  }
+                  {
+                    status = $1;
+                    if (status ~ /^R[0-9]+$/ || status ~ /^C[0-9]+$/) {
+                      emit_scope($2);
+                      emit_scope($3);
+                    } else {
+                      emit_scope($2);
+                    }
+                  }
+                ' \
               | sort -u)
 
             if [ -z "$changed" ]; then
@@ -119,9 +159,44 @@ jobs:
                   '{environment:$env, region:$reg, instance:$ins, role:$role}'
               done | jq -sc '.')
             fi
+
+            if [ -n "$all_env_json" ]; then
+              echo "::notice::Changed env JSON files:"
+              echo "$all_env_json"
+            fi
           fi
 
           has_scope=$([ "$matrix" != "[]" ] && echo true || echo false)
+
+          if [ "$has_scope" = "true" ]; then
+            echo "::notice::Deployment scope matrix: $matrix"
+          else
+            echo "::warning::No deployable *-p.json or *-s.json changes detected in this run."
+          fi
+
+          {
+            echo "### Detect Scope"
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "- Trigger: workflow_dispatch"
+              echo "- Target: env=${{ inputs.environment }}, region=${{ inputs.region }}, instance=${{ inputs.instance }}, role=${{ inputs.role }}"
+            else
+              echo "- Trigger: pull_request"
+              if [ -n "$all_env_json" ]; then
+                echo "- Changed env JSON files:"
+                echo '```text'
+                echo "$all_env_json"
+                echo '```'
+              else
+                echo "- Changed env JSON files: none"
+              fi
+            fi
+            echo "- has_scope: $has_scope"
+            echo "- matrix:"
+            echo '```json'
+            echo "$matrix" | jq .
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "has_scope=$has_scope" >> "$GITHUB_OUTPUT"
 
@@ -152,7 +227,7 @@ jobs:
   plan:
     name: Plan - ${{ matrix.environment }} / ${{ matrix.region }} / ${{ matrix.instance }} / ${{ matrix.role }}
     needs: [detect-scope, validate]
-    if: needs.detect-scope.outputs.has_scope == 'true'
+    if: needs.detect-scope.outputs.has_scope == 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.operation != 'destroy')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -263,3 +338,70 @@ jobs:
       - name: Terraform output
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform output
+
+  destroy-guard:
+    name: Destroy Confirmation Guard
+    needs: [detect-scope]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.operation == 'destroy' && github.event.inputs.confirm_destroy != 'DESTROY'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail without explicit confirmation
+        run: |
+          echo "::error::Destroy requested but confirmation is missing. Re-run with confirm_destroy=DESTROY."
+          exit 1
+
+  destroy:
+    name: Destroy - ${{ matrix.environment }} / ${{ matrix.region }} / ${{ matrix.instance }} / ${{ matrix.role }}
+    needs: [detect-scope, validate]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.operation == 'destroy' && github.event.inputs.confirm_destroy == 'DESTROY' && needs.detect-scope.outputs.has_scope == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.detect-scope.outputs.matrix) }}
+
+    environment: azure-${{ matrix.environment }}
+    env:
+      ARM_USE_OIDC: true
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ matrix.environment }}/${{ matrix.region }}/${{ matrix.instance }}/${{ matrix.role }}/terraform.tfstate"
+
+      - name: Terraform destroy plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -destroy \
+            -var="environment=${{ matrix.environment }}" \
+            -var="region=${{ matrix.region }}" \
+            -var="instance=${{ matrix.instance }}" \
+            -var="role=${{ matrix.role }}" \
+            -out=tfdestroy
+
+      - name: Terraform destroy apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve tfdestroy
