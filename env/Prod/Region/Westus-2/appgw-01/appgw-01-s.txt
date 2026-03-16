@@ -1,8 +1,8 @@
 {
     "name": "agw-prod-01",
-    "resource_group_name": "MigrationRG",
-    "location": "westus2",
-    "app_gateway_subnet_id": "/subscriptions/5ade8a7e-f940-457e-9b4e-65bd6e1d0a29/resourceGroups/migrationrg/providers/Microsoft.Network/virtualNetworks/MigrationRG-vnet/subnets/appgatewaysnet",
+    "resource_group_name": "rg-network-prod-westus",
+    "location": "westus",
+    "app_gateway_subnet_id": "/subscriptions/<subscription-id>/resourceGroups/rg-network-prod-westus/providers/Microsoft.Network/virtualNetworks/vnet-prod-westus/subnets/snet-appgw-westus",
     "public_ip_name": "pip-agw-prod-01",
     "backend_ip_addresses": [],
     "frontend_ports": {
@@ -17,7 +17,11 @@
     },
     "backend_address_pools": {
         "web_pool": {
-            "name": "pool-web"
+            "name": "pool-web",
+            "ip_addresses": [
+                "10.10.1.10",
+                "10.10.1.11"
+            ]
         }
     },
     "backend_http_settings": {
@@ -73,7 +77,7 @@
     "log_analytics_workspace_id": null,
     "tags": {
         "environment": "prod",
-        "role": "primary",
+        "role": "secondary",
         "workload": "network-ingress",
         "managedBy": "terraform"
     }

@@ -22,6 +22,19 @@ locals {
     for f in local.selected_files :
     replace(replace(basename(f), ".json", ""), "-", "_") => jsondecode(file("${local.instance_path}/${f}"))
   }
+
+  # AzureRM requires at least one backend_address_pool, backend_http_settings,
+  # and request_routing_rule on every Application Gateway.
+  invalid_backend_gateways = [
+    for k, v in local.gateways : k
+    if !(
+      length(try(v.backend_ip_addresses, [])) > 0 || (
+        length(try(v.backend_address_pools, {})) > 0 &&
+        length(try(v.backend_http_settings, {})) > 0 &&
+        length(try(v.request_routing_rules, {})) > 0
+      )
+    )
+  ]
 }
 
 check "primary_secondary_pairing" {
@@ -49,6 +62,11 @@ resource "terraform_data" "validate_instance_files" {
       condition     = length(local.unexpected_files) == 0
       error_message = "Instance folder '${var.instance}' contains unexpected JSON file(s): ${join(", ", local.unexpected_files)}. Only *-p.json (primary) and *-s.json (secondary) are valid."
     }
+
+    precondition {
+      condition     = length(local.invalid_backend_gateways) == 0
+      error_message = "Gateway config missing required backend settings for: ${join(", ", local.invalid_backend_gateways)}. Provide either non-empty backend_ip_addresses OR explicit backend_address_pools + backend_http_settings + request_routing_rules in the JSON file."
+    }
   }
 }
 
@@ -61,21 +79,21 @@ module "app_gateway" {
   resource_group_name = each.value.resource_group_name
   location            = try(each.value.location, "westus2")
 
-  gateway_ip_configuration = {
+  gateway_ip_configuration = try(each.value.gateway_ip_configuration, {
     name      = "gwipcfg"
     subnet_id = each.value.app_gateway_subnet_id
-  }
+  })
 
-  public_ip_address_configuration = {
+  public_ip_address_configuration = try(each.value.public_ip_address_configuration, {
     create_public_ip_enabled = true
     public_ip_name           = try(each.value.public_ip_name, "pip-${each.value.name}")
     allocation_method        = "Static"
     sku                      = "Standard"
     sku_tier                 = "Regional"
     zones                    = ["1", "2", "3"]
-  }
+  })
 
-  frontend_ports = {
+  frontend_ports = length(try(each.value.frontend_ports, {})) > 0 ? each.value.frontend_ports : {
     http = {
       name = "port-80"
       port = 80
@@ -86,14 +104,14 @@ module "app_gateway" {
     }
   }
 
-  backend_address_pools = length(try(each.value.backend_ip_addresses, [])) > 0 ? {
+  backend_address_pools = length(try(each.value.backend_address_pools, {})) > 0 ? each.value.backend_address_pools : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web_pool = {
       name         = "pool-web"
       ip_addresses = toset(each.value.backend_ip_addresses)
     }
-  } : {}
+  } : {})
 
-  probes = length(try(each.value.backend_ip_addresses, [])) > 0 ? {
+  probes = length(try(each.value.probes, {})) > 0 ? each.value.probes : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web = {
       name                = "probe-web"
       protocol            = "Http"
@@ -106,9 +124,9 @@ module "app_gateway" {
         status_code = ["200-399"]
       }
     }
-  } : {}
+  } : null)
 
-  backend_http_settings = length(try(each.value.backend_ip_addresses, [])) > 0 ? {
+  backend_http_settings = length(try(each.value.backend_http_settings, {})) > 0 ? each.value.backend_http_settings : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web_http = {
       name                  = "bhs-web-http"
       port                  = 80
@@ -117,9 +135,9 @@ module "app_gateway" {
       request_timeout       = 30
       probe_name            = "probe-web"
     }
-  } : {}
+  } : {})
 
-  http_listeners = {
+  http_listeners = length(try(each.value.http_listeners, {})) > 0 ? each.value.http_listeners : {
     http_listener = {
       name                           = "lst-http"
       frontend_port_name             = "port-80"
@@ -129,7 +147,7 @@ module "app_gateway" {
     }
   }
 
-  request_routing_rules = length(try(each.value.backend_ip_addresses, [])) > 0 ? {
+  request_routing_rules = length(try(each.value.request_routing_rules, {})) > 0 ? each.value.request_routing_rules : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web_rule = {
       name                       = "rr-web"
       rule_type                  = "Basic"
@@ -138,7 +156,7 @@ module "app_gateway" {
       backend_http_settings_name = "bhs-web-http"
       priority                   = 100
     }
-  } : {}
+  } : {})
 
   ssl_certificates = try(each.value.ssl_certificate_key_vault_secret_id, null) != null ? {
     cert = {
