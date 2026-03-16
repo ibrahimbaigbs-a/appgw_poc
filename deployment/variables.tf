@@ -16,6 +16,17 @@ variable "instance" {
   default     = "appgw-01"
 }
 
+variable "role" {
+  description = "Gateway role to deploy within an instance folder: p (primary), s (secondary), or both."
+  type        = string
+  default     = "both"
+
+  validation {
+    condition     = contains(["p", "s", "both"], lower(var.role))
+    error_message = "role must be one of: p, s, both."
+  }
+}
+
 variable "env_root_path" {
   description = "Path to the env directory, relative to this deployment folder."
   type        = string

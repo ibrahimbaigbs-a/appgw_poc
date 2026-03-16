@@ -1,4 +1,6 @@
 locals {
+  selected_role = lower(var.role)
+
   # Scoped to a single instance pair folder: env/<Env>/Region/<Region>/<instance>/
   # One Terraform run = one resilient pair (primary + secondary).
   # Each pair has its own isolated state file, so parallel runs across pairs are safe.
@@ -6,7 +8,9 @@ locals {
 
   primary_files   = fileset(local.instance_path, "*-p.json")
   secondary_files = fileset(local.instance_path, "*-s.json")
-  all_files       = fileset(local.instance_path, "*-[ps].json")
+  selected_files = local.selected_role == "p" ? local.primary_files : (
+    local.selected_role == "s" ? local.secondary_files : fileset(local.instance_path, "*-[ps].json")
+  )
 
   # Any JSON file in the folder that is NOT a recognised -p.json or -s.json.
   unexpected_files = toset([
@@ -15,21 +19,21 @@ locals {
   ])
 
   gateways = {
-    for f in local.all_files :
+    for f in local.selected_files :
     replace(replace(basename(f), ".json", ""), "-", "_") => jsondecode(file("${local.instance_path}/${f}"))
   }
 }
 
 check "primary_secondary_pairing" {
   assert {
-    condition     = length(local.primary_files) > 0 && length(local.secondary_files) > 0
-    error_message = "Instance folder '${var.instance}' must contain both a -p.json (primary) and a -s.json (secondary) file for resilient deployment."
+    condition     = local.selected_role != "both" || (length(local.primary_files) > 0 && length(local.secondary_files) > 0)
+    error_message = "Instance folder '${var.instance}' must contain both a -p.json (primary) and a -s.json (secondary) file when role=both."
   }
 }
 
 check "distinct_resource_groups" {
   assert {
-    condition = length(distinct(
+    condition = local.selected_role != "both" || length(distinct(
       [for k, v in local.gateways : v.resource_group_name]
     )) == length(local.gateways)
     error_message = "Primary and secondary gateways must use different resource_group_name values to avoid Azure name conflicts when sharing the same gateway name."
@@ -82,14 +86,14 @@ module "app_gateway" {
     }
   }
 
-  backend_address_pools = {
+  backend_address_pools = length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web_pool = {
       name         = "pool-web"
       ip_addresses = toset(each.value.backend_ip_addresses)
     }
-  }
+  } : {}
 
-  probes = {
+  probes = length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web = {
       name                = "probe-web"
       protocol            = "Http"
@@ -97,14 +101,14 @@ module "app_gateway" {
       interval            = 30
       timeout             = 30
       unhealthy_threshold = 3
-      host                = each.value.backend_ip_addresses[0]
+      host                = try(each.value.backend_ip_addresses[0], null)
       match = {
         status_code = ["200-399"]
       }
     }
-  }
+  } : {}
 
-  backend_http_settings = {
+  backend_http_settings = length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web_http = {
       name                  = "bhs-web-http"
       port                  = 80
@@ -113,7 +117,7 @@ module "app_gateway" {
       request_timeout       = 30
       probe_name            = "probe-web"
     }
-  }
+  } : {}
 
   http_listeners = {
     http_listener = {
@@ -125,7 +129,7 @@ module "app_gateway" {
     }
   }
 
-  request_routing_rules = {
+  request_routing_rules = length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web_rule = {
       name                       = "rr-web"
       rule_type                  = "Basic"
@@ -134,7 +138,7 @@ module "app_gateway" {
       backend_http_settings_name = "bhs-web-http"
       priority                   = 100
     }
-  }
+  } : {}
 
   ssl_certificates = try(each.value.ssl_certificate_key_vault_secret_id, null) != null ? {
     cert = {
