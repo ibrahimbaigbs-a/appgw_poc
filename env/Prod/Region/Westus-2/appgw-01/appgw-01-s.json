@@ -1,8 +1,8 @@
 {
     "name": "agw-prod-01",
-    "resource_group_name": "rg-network-prod-westus",
+    "resource_group_name": "secondaryagw-rg",
     "location": "westus",
-    "app_gateway_subnet_id": "/subscriptions/<subscription-id>/resourceGroups/rg-network-prod-westus/providers/Microsoft.Network/virtualNetworks/vnet-prod-westus/subnets/snet-appgw-westus",
+    "app_gateway_subnet_id": "/subscriptions/5ade8a7e-f940-457e-9b4e-65bd6e1d0a29/resourceGroups/secondaryagw-rg/providers/Microsoft.Network/virtualNetworks/s-agw-vnet/subnets/agw-snet-01",
     "public_ip_name": "pip-agw-prod-01",
     "backend_ip_addresses": [],
     "frontend_ports": {
