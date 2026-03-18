@@ -22,7 +22,8 @@
         "private_internal": {
             "name": "agw-prod-01-feip-private",
             "subnet_id": "/subscriptions/5ade8a7e-f940-457e-9b4e-65bd6e1d0a29/resourceGroups/primaryagw-rg/providers/Microsoft.Network/virtualNetworks/p-agq-vnet/subnets/agw-snet-01",
-            "private_ip_address_allocation": "Dynamic"
+            "private_ip_address": "192.168.0.5",
+            "private_ip_address_allocation": "Static"
         }
     },
     "backend_ip_addresses": [],
