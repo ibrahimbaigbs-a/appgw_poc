@@ -123,7 +123,7 @@
     "host_names": [
         "app.contoso.com"
     ],
-    "ssl_certificate_key_vault_secret_id": "https://your-keyvault-name.vault.azure.net/secrets/your-cert-name",
+    "ssl_certificate_key_vault_secret_id": "https://safewaykvwestus.vault.azure.net/certificates/appgw-test-cert01/0364ec15d5914e249cdfac9bbe1b1006",
     "log_analytics_workspace_id": null,
     "tags": {
         "environment": "prod",
