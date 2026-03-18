@@ -16,7 +16,7 @@
     ],
     "managed_identities": {
         "user_assigned_resource_ids": [
-            "/subscriptions/5ade8a7e-f940-457e-9b4e-65bd6e1d0a29/resourcegroups/MigrationRG/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testumi"
+            "/subscriptions/5ade8a7e-f940-457e-9b4e-65bd6e1d0a29/resourceGroups/MigrationRG/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testumi"
         ]
     },
     "frontend_ip_configurations": {
