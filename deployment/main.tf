@@ -94,6 +94,8 @@ module "app_gateway" {
     zones                    = try(each.value.public_ip_zones, null)
   })
 
+  frontend_ip_configurations = try(each.value.frontend_ip_configurations, null)
+
   frontend_ports = length(try(each.value.frontend_ports, {})) > 0 ? each.value.frontend_ports : {
     http = {
       name = "port-80"

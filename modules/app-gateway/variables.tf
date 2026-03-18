@@ -72,6 +72,28 @@ DESCRIPTION
   nullable    = false
 }
 
+variable "frontend_ip_configurations" {
+  type = map(object({
+    name                            = string
+    public_ip_address_id            = optional(string)
+    use_created_public_ip           = optional(bool, false)
+    subnet_id                       = optional(string)
+    private_ip_address              = optional(string)
+    private_ip_address_allocation   = optional(string)
+    private_link_configuration_name = optional(string)
+  }))
+  default     = null
+  description = <<-DESCRIPTION
+ - `name` - (Required) The name of the Frontend IP Configuration.
+ - `public_ip_address_id` - (Optional) Resource ID of the Public IP for this frontend.
+ - `use_created_public_ip` - (Optional) Set to `true` to attach the Public IP created by this module to this frontend configuration.
+ - `subnet_id` - (Optional) Resource ID of subnet used for a private frontend.
+ - `private_ip_address` - (Optional) Static private IP address.
+ - `private_ip_address_allocation` - (Optional) Allocation mode for private IP. Possible values are `Static` and `Dynamic`.
+ - `private_link_configuration_name` - (Optional) Name of private link configuration to associate.
+DESCRIPTION
+}
+
 variable "gateway_ip_configuration" {
   type = object({
     name      = string

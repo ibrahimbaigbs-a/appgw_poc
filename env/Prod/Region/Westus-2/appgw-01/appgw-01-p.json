@@ -14,6 +14,17 @@
         "2",
         "3"
     ],
+    "frontend_ip_configurations": {
+        "public_default": {
+            "name": "agw-prod-01-feip",
+            "use_created_public_ip": true
+        },
+        "private_internal": {
+            "name": "agw-prod-01-feip-private",
+            "subnet_id": "/subscriptions/5ade8a7e-f940-457e-9b4e-65bd6e1d0a29/resourceGroups/primaryagw-rg/providers/Microsoft.Network/virtualNetworks/p-agq-vnet/subnets/agw-snet-01",
+            "private_ip_address_allocation": "Dynamic"
+        }
+    },
     "backend_ip_addresses": [],
     "frontend_ports": {
         "http": {
@@ -48,6 +59,15 @@
             "host_names": [
                 "app.contoso.com"
             ]
+        },
+        "http_listener_private": {
+            "name": "lst-http-private",
+            "frontend_port_name": "port-80",
+            "frontend_ip_configuration_name": "agw-prod-01-feip-private",
+            "protocol": "Http",
+            "host_names": [
+                "internal.app.contoso.com"
+            ]
         }
     },
     "request_routing_rules": {
@@ -58,6 +78,14 @@
             "backend_address_pool_name": "pool-web",
             "backend_http_settings_name": "bhs-web-http",
             "priority": 100
+        },
+        "web_rule_private": {
+            "name": "rr-web-private",
+            "rule_type": "Basic",
+            "http_listener_name": "lst-http-private",
+            "backend_address_pool_name": "pool-web",
+            "backend_http_settings_name": "bhs-web-http",
+            "priority": 110
         }
     },
     "probes": {

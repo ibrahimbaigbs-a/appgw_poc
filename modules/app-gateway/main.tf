@@ -76,10 +76,17 @@ resource "azurerm_application_gateway" "this" {
       }
     }
   }
-  # Frontend IP Configuration - Public
-  frontend_ip_configuration {
-    name                 = local.frontend_ip_configuration_name
-    public_ip_address_id = var.public_ip_address_configuration.create_public_ip_enabled == true ? azurerm_public_ip.this[0].id : var.public_ip_address_configuration.public_ip_resource_id
+  dynamic "frontend_ip_configuration" {
+    for_each = local.frontend_ip_configurations
+
+    content {
+      name                            = frontend_ip_configuration.value.name
+      public_ip_address_id            = try(frontend_ip_configuration.value.public_ip_address_id, null)
+      subnet_id                       = try(frontend_ip_configuration.value.subnet_id, null)
+      private_ip_address              = try(frontend_ip_configuration.value.private_ip_address, null)
+      private_ip_address_allocation   = try(frontend_ip_configuration.value.private_ip_address_allocation, null)
+      private_link_configuration_name = try(frontend_ip_configuration.value.private_link_configuration_name, null)
+    }
   }
   dynamic "frontend_port" {
     for_each = var.frontend_ports
