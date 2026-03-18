@@ -1,7 +1,18 @@
 locals {
   frontend_ip_configuration_name = "${var.name}-feip"
   gateway_ip_configuration_name  = "${var.name}-gwipc"
-  identity_required              = var.managed_identities.system_assigned || length(var.managed_identities.user_assigned_resource_ids) > 0
+  default_public_ip_address_id   = var.public_ip_address_configuration.create_public_ip_enabled == true ? azurerm_public_ip.this[0].id : var.public_ip_address_configuration.public_ip_resource_id
+  frontend_ip_configurations = var.frontend_ip_configurations != null ? {
+    for key, cfg in var.frontend_ip_configurations : key => merge(cfg, {
+      public_ip_address_id = try(cfg.public_ip_address_id, null) != null ? cfg.public_ip_address_id : (try(cfg.use_created_public_ip, false) ? local.default_public_ip_address_id : null)
+    })
+    } : {
+    default = {
+      name                 = local.frontend_ip_configuration_name
+      public_ip_address_id = local.default_public_ip_address_id
+    }
+  }
+  identity_required = var.managed_identities.system_assigned || length(var.managed_identities.user_assigned_resource_ids) > 0
   managed_identities = {
     type = (
       var.managed_identities.system_assigned && length(var.managed_identities.user_assigned_resource_ids) > 0 ? "SystemAssigned, UserAssigned" :

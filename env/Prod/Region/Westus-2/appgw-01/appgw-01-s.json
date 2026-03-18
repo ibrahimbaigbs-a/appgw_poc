@@ -6,6 +6,12 @@
     "public_ip_name": "pip-agw-prod-01",
     "app_gateway_zones": null,
     "public_ip_zones": null,
+    "frontend_ip_configurations": {
+        "public_default": {
+            "name": "agw-prod-01-feip",
+            "use_created_public_ip": true
+        }
+    },
     "backend_ip_addresses": [],
     "frontend_ports": {
         "http": {
