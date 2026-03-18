@@ -127,15 +127,18 @@ module "app_gateway" {
     }
   } : {})
 
-  http_listeners = length(try(each.value.http_listeners, {})) > 0 ? each.value.http_listeners : {
-    http_listener = {
-      name                           = "lst-http"
-      frontend_port_name             = "port-80"
-      frontend_ip_configuration_name = "${each.value.name}-feip"
-      protocol                       = "Http"
-      host_names                     = try(each.value.host_names, ["app.contoso.com"])
-    }
-  }
+  http_listeners = merge(
+    {
+      http_listener = {
+        name                           = "lst-http"
+        frontend_port_name             = "port-80"
+        frontend_ip_configuration_name = "${each.value.name}-feip"
+        protocol                       = "Http"
+        host_names                     = try(each.value.host_names, ["app.contoso.com"])
+      }
+    },
+    try(each.value.http_listeners, {})
+  )
 
   request_routing_rules = length(try(each.value.request_routing_rules, {})) > 0 ? each.value.request_routing_rules : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
     web_rule = {
