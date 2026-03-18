@@ -14,6 +14,11 @@
         "2",
         "3"
     ],
+    "managed_identities": {
+        "user_assigned_resource_ids": [
+            "/subscriptions/5ade8a7e-f940-457e-9b4e-65bd6e1d0a29/resourcegroups/MigrationRG/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testumi"
+        ]
+    },
     "frontend_ip_configurations": {
         "public_default": {
             "name": "agw-prod-01-feip",
@@ -69,6 +74,16 @@
             "host_names": [
                 "internal.app.contoso.com"
             ]
+        },
+        "https_listener": {
+            "name": "lst-https",
+            "frontend_port_name": "port-443",
+            "frontend_ip_configuration_name": "agw-prod-01-feip",
+            "protocol": "Https",
+            "ssl_certificate_name": "web-cert",
+            "host_names": [
+                "app.contoso.com"
+            ]
         }
     },
     "request_routing_rules": {
@@ -108,7 +123,7 @@
     "host_names": [
         "app.contoso.com"
     ],
-    "ssl_certificate_key_vault_secret_id": null,
+    "ssl_certificate_key_vault_secret_id": "https://your-keyvault-name.vault.azure.net/secrets/your-cert-name",
     "log_analytics_workspace_id": null,
     "tags": {
         "environment": "prod",

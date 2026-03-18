@@ -181,4 +181,6 @@ module "app_gateway" {
     workload    = "network-ingress"
     managedBy   = "terraform"
   })
+
+  managed_identities = try(each.value.managed_identities, null)
 }
