@@ -151,12 +151,14 @@ module "app_gateway" {
     }
   } : {})
 
-  ssl_certificates = try(each.value.ssl_certificate_key_vault_secret_id, null) != null ? {
-    cert = {
-      name                = "web-cert"
-      key_vault_secret_id = each.value.ssl_certificate_key_vault_secret_id
-    }
-  } : null
+  ssl_certificates = length(try(each.value.ssl_certificates, {})) > 0 ? each.value.ssl_certificates : (
+    try(each.value.ssl_certificate_key_vault_secret_id, null) != null ? {
+      cert = {
+        name                = try(each.value.ssl_certificate_name, "web-cert")
+        key_vault_secret_id = each.value.ssl_certificate_key_vault_secret_id
+      }
+    } : null
+  )
 
   diagnostic_settings = try(each.value.log_analytics_workspace_id, null) != null ? {
     law = {
