@@ -63,6 +63,7 @@
             "frontend_ip_configuration_name": "agw-prod-01-feip",
             "protocol": "Https",
             "ssl_certificate_name": "appgw-test-cert-02",
+            "require_sni": true,
             "host_names": [
                 "app.contoso.com"
             ]
@@ -82,8 +83,9 @@
             "frontend_ip_configuration_name": "agw-prod-01-feip",
             "protocol": "Https",
             "ssl_certificate_name": "appgw-test-cert01",
+            "require_sni": true,
             "host_names": [
-                "app.contoso.com"
+                "app2.contoso.com"
             ]
         }
     },
@@ -103,6 +105,14 @@
             "backend_address_pool_name": "pool-web",
             "backend_http_settings_name": "bhs-web-http",
             "priority": 110
+        },
+        "web_rule_https_alt": {
+            "name": "rr-web-https-alt",
+            "rule_type": "Basic",
+            "http_listener_name": "lst-https",
+            "backend_address_pool_name": "pool-web",
+            "backend_http_settings_name": "bhs-web-http",
+            "priority": 120
         }
     },
     "probes": {
