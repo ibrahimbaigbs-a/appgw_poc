@@ -1,10 +1,10 @@
 locals {
   selected_role = lower(var.role)
 
-  # Scoped to a single instance pair folder: env/<Env>/Region/<Region>/<instance>/
+  # Scoped to a single instance pair folder: env/<Env>/<AppCode>/<instance>/
   # One Terraform run = one resilient pair (primary + secondary).
   # Each pair has its own isolated state file, so parallel runs across pairs are safe.
-  instance_path = abspath("${path.module}/${var.env_root_path}/${var.environment}/Region/${var.region}/${var.instance}")
+  instance_path = abspath("${path.module}/${var.env_root_path}/${var.environment}/${var.appcode}/${var.instance}")
 
   primary_files   = fileset(local.instance_path, "*-p.json")
   secondary_files = fileset(local.instance_path, "*-s.json")
