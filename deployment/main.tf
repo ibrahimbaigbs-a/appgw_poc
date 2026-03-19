@@ -35,6 +35,58 @@ locals {
       )
     )
   ]
+
+  # Production-grade guardrails: require explicit object graph in JSON and validate references.
+  gateways_missing_explicit_graph = [
+    for k, v in local.gateways : k
+    if(
+      length(try(v.frontend_ports, {})) == 0 ||
+      length(try(v.backend_address_pools, {})) == 0 ||
+      length(try(v.backend_http_settings, {})) == 0 ||
+      length(try(v.http_listeners, {})) == 0 ||
+      length(try(v.request_routing_rules, {})) == 0
+    )
+  ]
+
+  gateways_with_unknown_listener_frontend_port = [
+    for k, v in local.gateways : k
+    if length([
+      for lk, lv in try(v.http_listeners, {}) : lk
+      if !contains([for pk, pv in try(v.frontend_ports, {}) : pv.name], try(lv.frontend_port_name, ""))
+    ]) > 0
+  ]
+
+  gateways_with_unknown_listener_frontend_ip = [
+    for k, v in local.gateways : k
+    if length([
+      for lk, lv in try(v.http_listeners, {}) : lk
+      if !contains(
+        length(try(v.frontend_ip_configurations, {})) > 0 ? [for fk, fv in try(v.frontend_ip_configurations, {}) : fv.name] : ["${v.name}-feip"],
+        try(lv.frontend_ip_configuration_name, "")
+      )
+    ]) > 0
+  ]
+
+  gateways_with_unknown_rule_listener = [
+    for k, v in local.gateways : k
+    if length([
+      for rk, rv in try(v.request_routing_rules, {}) : rk
+      if !contains([for lk, lv in try(v.http_listeners, {}) : lv.name], try(rv.http_listener_name, ""))
+    ]) > 0
+  ]
+
+  gateways_with_invalid_https_cert_mapping = [
+    for k, v in local.gateways : k
+    if length([
+      for lk, lv in try(v.http_listeners, {}) : lk
+      if lower(try(lv.protocol, "")) == "https" && !contains(
+        length(try(v.ssl_certificates, {})) > 0 ? [for ck, cv in try(v.ssl_certificates, {}) : cv.name] : (
+          try(v.ssl_certificate_key_vault_secret_id, null) != null ? [try(v.ssl_certificate_name, "web-cert")] : []
+        ),
+        try(lv.ssl_certificate_name, "")
+      )
+    ]) > 0
+  ]
 }
 
 check "primary_secondary_pairing" {
@@ -67,6 +119,31 @@ resource "terraform_data" "validate_instance_files" {
       condition     = length(local.invalid_backend_gateways) == 0
       error_message = "Gateway config missing required backend settings for: ${join(", ", local.invalid_backend_gateways)}. Provide either non-empty backend_ip_addresses OR explicit backend_address_pools + backend_http_settings + request_routing_rules in the JSON file."
     }
+
+    precondition {
+      condition     = length(local.gateways_missing_explicit_graph) == 0
+      error_message = "Production strict mode is enabled. Missing required explicit JSON blocks for: ${join(", ", local.gateways_missing_explicit_graph)}. Required: frontend_ports, backend_address_pools, backend_http_settings, http_listeners, request_routing_rules."
+    }
+
+    precondition {
+      condition     = length(local.gateways_with_unknown_listener_frontend_port) == 0
+      error_message = "Invalid listener references for gateway(s): ${join(", ", local.gateways_with_unknown_listener_frontend_port)}. Each http_listener.frontend_port_name must match a frontend_ports[*].name value."
+    }
+
+    precondition {
+      condition     = length(local.gateways_with_unknown_listener_frontend_ip) == 0
+      error_message = "Invalid listener references for gateway(s): ${join(", ", local.gateways_with_unknown_listener_frontend_ip)}. Each http_listener.frontend_ip_configuration_name must match a frontend_ip_configurations[*].name value."
+    }
+
+    precondition {
+      condition     = length(local.gateways_with_unknown_rule_listener) == 0
+      error_message = "Invalid routing rule references for gateway(s): ${join(", ", local.gateways_with_unknown_rule_listener)}. Each request_routing_rule.http_listener_name must match an http_listeners[*].name value."
+    }
+
+    precondition {
+      condition     = length(local.gateways_with_invalid_https_cert_mapping) == 0
+      error_message = "Invalid HTTPS certificate mapping for gateway(s): ${join(", ", local.gateways_with_invalid_https_cert_mapping)}. Every Https listener must set ssl_certificate_name that exists in ssl_certificates[*].name (or legacy ssl_certificate_name when ssl_certificate_key_vault_secret_id is used)."
+    }
   }
 }
 
@@ -96,60 +173,17 @@ module "app_gateway" {
 
   frontend_ip_configurations = try(each.value.frontend_ip_configurations, null)
 
-  frontend_ports = length(try(each.value.frontend_ports, {})) > 0 ? each.value.frontend_ports : {
-    http = {
-      name = "port-80"
-      port = 80
-    }
-    https = {
-      name = "port-443"
-      port = 443
-    }
-  }
+  frontend_ports = try(each.value.frontend_ports, {})
 
-  backend_address_pools = length(try(each.value.backend_address_pools, {})) > 0 ? each.value.backend_address_pools : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
-    web_pool = {
-      name         = "pool-web"
-      ip_addresses = toset(each.value.backend_ip_addresses)
-    }
-  } : {})
+  backend_address_pools = try(each.value.backend_address_pools, {})
 
   probes = try(each.value.probes, null)
 
-  backend_http_settings = length(try(each.value.backend_http_settings, {})) > 0 ? each.value.backend_http_settings : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
-    web_http = {
-      name                  = "bhs-web-http"
-      port                  = 80
-      protocol              = "Http"
-      cookie_based_affinity = "Disabled"
-      request_timeout       = 30
-      probe_name            = "probe-web"
-    }
-  } : {})
+  backend_http_settings = try(each.value.backend_http_settings, {})
 
-  http_listeners = merge(
-    {
-      http_listener = {
-        name                           = "lst-http"
-        frontend_port_name             = "port-80"
-        frontend_ip_configuration_name = "${each.value.name}-feip"
-        protocol                       = "Http"
-        host_names                     = try(each.value.host_names, ["app.contoso.com"])
-      }
-    },
-    try(each.value.http_listeners, {})
-  )
+  http_listeners = try(each.value.http_listeners, {})
 
-  request_routing_rules = length(try(each.value.request_routing_rules, {})) > 0 ? each.value.request_routing_rules : (length(try(each.value.backend_ip_addresses, [])) > 0 ? {
-    web_rule = {
-      name                       = "rr-web"
-      rule_type                  = "Basic"
-      http_listener_name         = "lst-http"
-      backend_address_pool_name  = "pool-web"
-      backend_http_settings_name = "bhs-web-http"
-      priority                   = 100
-    }
-  } : {})
+  request_routing_rules = try(each.value.request_routing_rules, {})
 
   ssl_certificates = length(try(each.value.ssl_certificates, {})) > 0 ? each.value.ssl_certificates : (
     try(each.value.ssl_certificate_key_vault_secret_id, null) != null ? {

@@ -73,6 +73,25 @@ Each JSON file (-p or -s) should provide these keys:
 - `autoscale_configuration` (object, optional)
 - `tags` (map, optional)
 
+## Production Mode (Explicit)
+
+This deployment wrapper is explicit-only for production-grade safety. Each gateway JSON must define:
+
+- `frontend_ports`
+- `backend_address_pools`
+- `backend_http_settings`
+- `http_listeners`
+- `request_routing_rules`
+
+Plan-time validation enforces reference integrity:
+
+- Every listener `frontend_port_name` must exist in `frontend_ports[*].name`
+- Every listener `frontend_ip_configuration_name` must exist in `frontend_ip_configurations[*].name`
+- Every routing rule `http_listener_name` must exist in `http_listeners[*].name`
+- Every `Https` listener `ssl_certificate_name` must map to an existing certificate name
+
+For production deployments with multiple certificates/listeners, prefer `ssl_certificates` map in JSON and point each `Https` listener to the matching certificate `name`.
+
 ## Run Locally
 
 ```bash
