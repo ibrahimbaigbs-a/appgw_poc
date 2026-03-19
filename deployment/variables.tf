@@ -4,14 +4,14 @@ variable "environment" {
   default     = "Prod"
 }
 
-variable "region" {
-  description = "Region folder name under env/<environment>/Region (for example: Westus-2)."
+variable "appcode" {
+  description = "Application code folder name under env/<environment>/ (for example: App-001)."
   type        = string
-  default     = "Westus-2"
+  default     = "App-001"
 }
 
 variable "instance" {
-  description = "App gateway pair folder name under the region folder (for example: appgw-01). One Terraform run = one resilient pair."
+  description = "App gateway pair folder name under the app code folder (for example: appgw-01). One Terraform run = one resilient pair."
   type        = string
   default     = "appgw-01"
 }

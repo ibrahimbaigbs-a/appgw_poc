@@ -2,9 +2,8 @@ terraform {
   required_version = ">= 1.9, < 2.0"
 
   # Backend config is supplied at init time via -backend-config flags.
-  # State key pattern: <Environment>/<Region>/terraform.tfstate
-  # All gateway instances in a region share one state file; Terraform's
-  # for_each tracks each primary/secondary resource independently within it.
+  # State key pattern: <Environment>/<AppCode>/<Instance>/<Role>/terraform.tfstate
+  # Each primary/secondary gateway role has an isolated state file.
   backend "azurerm" {}
 
   required_providers {

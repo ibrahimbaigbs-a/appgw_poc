@@ -14,10 +14,10 @@ on:
         required: true
         default: Prod
         type: string
-      region:
-        description: Region folder under env/<Env>/Region/ (for example Westus-2)
+      appcode:
+        description: App code folder under env/<Env>/ (for example App-001)
         required: true
-        default: Westus-2
+        default: App-001
         type: string
       instance:
         description: Instance pair folder (for example appgw-01)
@@ -88,22 +88,22 @@ jobs:
             if [ "${{ inputs.role }}" = "both" ]; then
               matrix=$(jq -cn \
                 --arg env "${{ inputs.environment }}" \
-                --arg reg "${{ inputs.region }}" \
+                --arg app "${{ inputs.appcode }}" \
                 --arg ins "${{ inputs.instance }}" \
                 '[
-                  {environment:$env, region:$reg, instance:$ins, role:"p"},
-                  {environment:$env, region:$reg, instance:$ins, role:"s"}
+                  {environment:$env, appcode:$app, instance:$ins, role:"p"},
+                  {environment:$env, appcode:$app, instance:$ins, role:"s"}
                 ]')
             else
               matrix=$(jq -cn \
                 --arg env "${{ inputs.environment }}" \
-                --arg reg "${{ inputs.region }}" \
+                --arg app "${{ inputs.appcode }}" \
                 --arg ins "${{ inputs.instance }}" \
                 --arg role "${{ inputs.role }}" \
-                '[{environment:$env, region:$reg, instance:$ins, role:$role}]')
+                '[{environment:$env, appcode:$app, instance:$ins, role:$role}]')
             fi
 
-            echo "::notice::Manual target -> env=${{ inputs.environment }}, region=${{ inputs.region }}, instance=${{ inputs.instance }}, role=${{ inputs.role }}"
+            echo "::notice::Manual target -> env=${{ inputs.environment }}, appcode=${{ inputs.appcode }}, instance=${{ inputs.instance }}, role=${{ inputs.role }}"
           else
             base_sha="${{ github.event.pull_request.base.sha }}"
             head_sha="${{ github.event.pull_request.head.sha }}"
@@ -111,7 +111,7 @@ jobs:
             all_env_json=$(git diff --name-status "$base_sha" "$head_sha" \
               | awk -F'\t' '
                   function print_if_env_json(path) {
-                    if (path ~ /^env\/.+\/Region\/.+\/.+\/.+\.json$/) print path;
+                    if (path ~ /^env\/.+\/.+\/.+\/.+\.json$/) print path;
                   }
                   {
                     status = $1;
@@ -128,12 +128,12 @@ jobs:
             changed=$(git diff --name-status "$base_sha" "$head_sha" \
               | awk -F'\t' '
                   function emit_scope(path, a, role) {
-                    if (path !~ /^env\/.+\/Region\/.+\/.+\/.+-[ps]\.json$/) return;
+                    if (path !~ /^env\/.+\/.+\/.+\/.+-[ps]\.json$/) return;
                     split(path, a, "/");
                     role = "";
-                    if (a[6] ~ /-p\.json$/) role = "p";
-                    else if (a[6] ~ /-s\.json$/) role = "s";
-                    if (role != "") print a[2] ":" a[4] ":" a[5] ":" role;
+                    if (a[5] ~ /-p\.json$/) role = "p";
+                    else if (a[5] ~ /-s\.json$/) role = "s";
+                    if (role != "") print a[2] ":" a[3] ":" a[4] ":" role;
                   }
                   {
                     status = $1;
@@ -150,13 +150,13 @@ jobs:
             if [ -z "$changed" ]; then
               matrix='[]'
             else
-              matrix=$(echo "$changed" | while IFS=':' read -r env_name region_name instance_name role_name; do
+              matrix=$(echo "$changed" | while IFS=':' read -r env_name appcode_name instance_name role_name; do
                 jq -cn \
                   --arg env "$env_name" \
-                  --arg reg "$region_name" \
+                  --arg app "$appcode_name" \
                   --arg ins "$instance_name" \
                   --arg role "$role_name" \
-                  '{environment:$env, region:$reg, instance:$ins, role:$role}'
+                  '{environment:$env, appcode:$app, instance:$ins, role:$role}'
               done | jq -sc '.')
             fi
 
@@ -178,7 +178,7 @@ jobs:
             echo "### Detect Scope"
             if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
               echo "- Trigger: workflow_dispatch"
-              echo "- Target: env=${{ inputs.environment }}, region=${{ inputs.region }}, instance=${{ inputs.instance }}, role=${{ inputs.role }}"
+              echo "- Target: env=${{ inputs.environment }}, appcode=${{ inputs.appcode }}, instance=${{ inputs.instance }}, role=${{ inputs.role }}"
             else
               echo "- Trigger: pull_request"
               if [ -n "$all_env_json" ]; then
@@ -225,7 +225,7 @@ jobs:
         run: terraform validate
 
   plan:
-    name: Plan - ${{ matrix.environment }} / ${{ matrix.region }} / ${{ matrix.instance }} / ${{ matrix.role }}
+    name: Plan - ${{ matrix.environment }} / ${{ matrix.appcode }} / ${{ matrix.instance }} / ${{ matrix.role }}
     needs: [detect-scope, validate]
     if: needs.detect-scope.outputs.has_scope == 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.operation != 'destroy')
     runs-on: ubuntu-latest
@@ -264,14 +264,14 @@ jobs:
             -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
-            -backend-config="key=${{ matrix.environment }}/${{ matrix.region }}/${{ matrix.instance }}/${{ matrix.role }}/terraform.tfstate"
+            -backend-config="key=${{ matrix.environment }}/${{ matrix.appcode }}/${{ matrix.instance }}/${{ matrix.role }}/terraform.tfstate"
 
       - name: Terraform plan
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform plan \
             -var="environment=${{ matrix.environment }}" \
-            -var="region=${{ matrix.region }}" \
+            -var="appcode=${{ matrix.appcode }}" \
             -var="instance=${{ matrix.instance }}" \
             -var="role=${{ matrix.role }}" \
             -out=tfplan
@@ -279,12 +279,12 @@ jobs:
       - name: Upload plan artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plan-${{ matrix.environment }}-${{ matrix.region }}-${{ matrix.instance }}-${{ matrix.role }}
+          name: plan-${{ matrix.environment }}-${{ matrix.appcode }}-${{ matrix.instance }}-${{ matrix.role }}
           path: ${{ env.TF_WORKING_DIR }}/tfplan
           if-no-files-found: error
 
   apply:
-    name: Apply - ${{ matrix.environment }} / ${{ matrix.region }} / ${{ matrix.instance }} / ${{ matrix.role }}
+    name: Apply - ${{ matrix.environment }} / ${{ matrix.appcode }} / ${{ matrix.instance }} / ${{ matrix.role }}
     needs: [detect-scope, plan]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.operation == 'apply'
     runs-on: ubuntu-latest
@@ -323,12 +323,12 @@ jobs:
             -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
-            -backend-config="key=${{ matrix.environment }}/${{ matrix.region }}/${{ matrix.instance }}/${{ matrix.role }}/terraform.tfstate"
+            -backend-config="key=${{ matrix.environment }}/${{ matrix.appcode }}/${{ matrix.instance }}/${{ matrix.role }}/terraform.tfstate"
 
       - name: Download plan artifact
         uses: actions/download-artifact@v4
         with:
-          name: plan-${{ matrix.environment }}-${{ matrix.region }}-${{ matrix.instance }}-${{ matrix.role }}
+          name: plan-${{ matrix.environment }}-${{ matrix.appcode }}-${{ matrix.instance }}-${{ matrix.role }}
           path: ${{ env.TF_WORKING_DIR }}
 
       - name: Terraform apply
@@ -351,7 +351,7 @@ jobs:
           exit 1
 
   destroy:
-    name: Destroy - ${{ matrix.environment }} / ${{ matrix.region }} / ${{ matrix.instance }} / ${{ matrix.role }}
+    name: Destroy - ${{ matrix.environment }} / ${{ matrix.appcode }} / ${{ matrix.instance }} / ${{ matrix.role }}
     needs: [detect-scope, validate]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.operation == 'destroy' && github.event.inputs.confirm_destroy == 'DESTROY' && needs.detect-scope.outputs.has_scope == 'true'
     runs-on: ubuntu-latest
@@ -390,14 +390,14 @@ jobs:
             -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
-            -backend-config="key=${{ matrix.environment }}/${{ matrix.region }}/${{ matrix.instance }}/${{ matrix.role }}/terraform.tfstate"
+            -backend-config="key=${{ matrix.environment }}/${{ matrix.appcode }}/${{ matrix.instance }}/${{ matrix.role }}/terraform.tfstate"
 
       - name: Terraform destroy plan
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform plan -destroy \
             -var="environment=${{ matrix.environment }}" \
-            -var="region=${{ matrix.region }}" \
+            -var="appcode=${{ matrix.appcode }}" \
             -var="instance=${{ matrix.instance }}" \
             -var="role=${{ matrix.role }}" \
             -out=tfdestroy
