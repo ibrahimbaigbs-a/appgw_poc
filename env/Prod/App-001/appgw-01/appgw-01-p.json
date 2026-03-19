@@ -144,6 +144,10 @@
             "key_vault_secret_id": "https://safewaykvwestus.vault.azure.net/secrets/appgw-test-cert01"
         }
     },
+    "autoscale_configuration": {
+        "min_capacity": 3,
+        "max_capacity": 5
+    },
     "log_analytics_workspace_id": null,
     "tags": {
         "environment": "prod",
