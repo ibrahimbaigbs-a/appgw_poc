@@ -59,9 +59,10 @@
     "http_listeners": {
         "http_listener": {
             "name": "lst-http",
-            "frontend_port_name": "port-80",
+            "frontend_port_name": "port-443",
             "frontend_ip_configuration_name": "agw-prod-01-feip",
-            "protocol": "Http",
+            "protocol": "Https",
+            "ssl_certificate_name": "appgw-test-cert-02",
             "host_names": [
                 "app.contoso.com"
             ]
@@ -123,8 +124,16 @@
     "host_names": [
         "app.contoso.com"
     ],
-    "ssl_certificate_name": "appgw-test-cert01",
-    "ssl_certificate_key_vault_secret_id": "https://safewaykvwestus.vault.azure.net/secrets/appgw-test-cert01/0364ec15d5914e249cdfac9bbe1b1006",
+    "ssl_certificates": {
+        "cert_web_default": {
+            "name": "appgw-test-cert-02",
+            "key_vault_secret_id": "https://safewaykvwestus.vault.azure.net/secrets/appgw-test-cert-02"
+        },
+        "cert_web_alt": {
+            "name": "appgw-test-cert01",
+            "key_vault_secret_id": "https://safewaykvwestus.vault.azure.net/secrets/appgw-test-cert01"
+        }
+    },
     "log_analytics_workspace_id": null,
     "tags": {
         "environment": "prod",
