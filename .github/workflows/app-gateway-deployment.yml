@@ -333,7 +333,27 @@ jobs:
 
       - name: Terraform apply
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve tfplan
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_attempts=3
+          attempt=1
+          while true; do
+            echo "Terraform apply attempt ${attempt}/${max_attempts}"
+            if terraform apply -auto-approve tfplan; then
+              break
+            fi
+
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "::error::Terraform apply failed after ${max_attempts} attempts"
+              exit 1
+            fi
+
+            sleep_seconds=$((attempt * 30))
+            echo "Apply failed. Retrying in ${sleep_seconds}s..."
+            sleep "$sleep_seconds"
+            attempt=$((attempt + 1))
+          done
 
       - name: Terraform output
         working-directory: ${{ env.TF_WORKING_DIR }}
