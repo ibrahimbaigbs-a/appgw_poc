@@ -23,15 +23,124 @@ locals {
     replace(replace(basename(f), ".json", ""), "-", "_") => jsondecode(file("${local.instance_path}/${f}"))
   }
 
+  # Optional listener-centric authoring model.
+  # Each bundle can carry listener + backend pool + backend settings + probe + routing rule.
+  gateway_listener_bundles = {
+    for k, v in local.gateways : k => try(v.listener_bundles, {})
+  }
+
+  gateway_bundled_backend_address_pools = {
+    for k, bundles in local.gateway_listener_bundles :
+    k => {
+      for bk, bv in bundles : bk => merge(
+        try(bv.backend_address_pool, {}),
+        { name = try(bv.backend_address_pool.name, bk) }
+      )
+      if try(bv.backend_address_pool, null) != null
+    }
+  }
+
+  gateway_bundled_probes = {
+    for k, bundles in local.gateway_listener_bundles :
+    k => {
+      for bk, bv in bundles : bk => merge(
+        try(bv.probe, {}),
+        { name = try(bv.probe.name, bk) }
+      )
+      if try(bv.probe, null) != null
+    }
+  }
+
+  gateway_bundled_backend_http_settings = {
+    for k, bundles in local.gateway_listener_bundles :
+    k => {
+      for bk, bv in bundles : bk => merge(
+        try(bv.backend_http_settings, {}),
+        {
+          name       = try(bv.backend_http_settings.name, bk)
+          probe_name = try(bv.backend_http_settings.probe_name, try(bv.probe.name, null))
+        }
+      )
+      if try(bv.backend_http_settings, null) != null
+    }
+  }
+
+  gateway_bundled_http_listeners = {
+    for k, bundles in local.gateway_listener_bundles :
+    k => {
+      for bk, bv in bundles : bk => merge(
+        try(bv.listener, {}),
+        { name = try(bv.listener.name, bk) }
+      )
+      if try(bv.listener, null) != null
+    }
+  }
+
+  gateway_bundled_request_routing_rules = {
+    for k, bundles in local.gateway_listener_bundles :
+    k => {
+      for bk, bv in bundles : bk => merge(
+        try(bv.request_routing_rule, {}),
+        {
+          name                       = try(bv.request_routing_rule.name, "rr-${bk}")
+          http_listener_name         = try(bv.request_routing_rule.http_listener_name, try(bv.listener.name, bk))
+          backend_address_pool_name  = try(bv.request_routing_rule.backend_address_pool_name, try(bv.backend_address_pool.name, bk))
+          backend_http_settings_name = try(bv.request_routing_rule.backend_http_settings_name, try(bv.backend_http_settings.name, bk))
+        }
+      )
+      if try(bv.request_routing_rule, null) != null
+    }
+  }
+
+  gateway_effective_backend_address_pools = {
+    for k, v in local.gateways :
+    k => merge(
+      try(local.gateway_bundled_backend_address_pools[k], {}),
+      try(v.backend_address_pools, {})
+    )
+  }
+
+  gateway_effective_probes = {
+    for k, v in local.gateways :
+    k => merge(
+      try(local.gateway_bundled_probes[k], {}),
+      try(v.probes, {})
+    )
+  }
+
+  gateway_effective_backend_http_settings = {
+    for k, v in local.gateways :
+    k => merge(
+      try(local.gateway_bundled_backend_http_settings[k], {}),
+      try(v.backend_http_settings, {})
+    )
+  }
+
+  gateway_effective_http_listeners = {
+    for k, v in local.gateways :
+    k => merge(
+      try(local.gateway_bundled_http_listeners[k], {}),
+      try(v.http_listeners, {})
+    )
+  }
+
+  gateway_effective_request_routing_rules = {
+    for k, v in local.gateways :
+    k => merge(
+      try(local.gateway_bundled_request_routing_rules[k], {}),
+      try(v.request_routing_rules, {})
+    )
+  }
+
   # AzureRM requires at least one backend_address_pool, backend_http_settings,
   # and request_routing_rule on every Application Gateway.
   invalid_backend_gateways = [
     for k, v in local.gateways : k
     if !(
       length(try(v.backend_ip_addresses, [])) > 0 || (
-        length(try(v.backend_address_pools, {})) > 0 &&
-        length(try(v.backend_http_settings, {})) > 0 &&
-        length(try(v.request_routing_rules, {})) > 0
+        length(try(local.gateway_effective_backend_address_pools[k], {})) > 0 &&
+        length(try(local.gateway_effective_backend_http_settings[k], {})) > 0 &&
+        length(try(local.gateway_effective_request_routing_rules[k], {})) > 0
       )
     )
   ]
@@ -41,17 +150,17 @@ locals {
     for k, v in local.gateways : k
     if(
       length(try(v.frontend_ports, {})) == 0 ||
-      length(try(v.backend_address_pools, {})) == 0 ||
-      length(try(v.backend_http_settings, {})) == 0 ||
-      length(try(v.http_listeners, {})) == 0 ||
-      length(try(v.request_routing_rules, {})) == 0
+      length(try(local.gateway_effective_backend_address_pools[k], {})) == 0 ||
+      length(try(local.gateway_effective_backend_http_settings[k], {})) == 0 ||
+      length(try(local.gateway_effective_http_listeners[k], {})) == 0 ||
+      length(try(local.gateway_effective_request_routing_rules[k], {})) == 0
     )
   ]
 
   gateways_with_unknown_listener_frontend_port = [
     for k, v in local.gateways : k
     if length([
-      for lk, lv in try(v.http_listeners, {}) : lk
+      for lk, lv in try(local.gateway_effective_http_listeners[k], {}) : lk
       if !contains([for pk, pv in try(v.frontend_ports, {}) : pv.name], try(lv.frontend_port_name, ""))
     ]) > 0
   ]
@@ -59,7 +168,7 @@ locals {
   gateways_with_unknown_listener_frontend_ip = [
     for k, v in local.gateways : k
     if length([
-      for lk, lv in try(v.http_listeners, {}) : lk
+      for lk, lv in try(local.gateway_effective_http_listeners[k], {}) : lk
       if !contains(
         length(try(v.frontend_ip_configurations, {})) > 0 ? [for fk, fv in try(v.frontend_ip_configurations, {}) : fv.name] : ["${v.name}-feip"],
         try(lv.frontend_ip_configuration_name, "")
@@ -70,15 +179,15 @@ locals {
   gateways_with_unknown_rule_listener = [
     for k, v in local.gateways : k
     if length([
-      for rk, rv in try(v.request_routing_rules, {}) : rk
-      if !contains([for lk, lv in try(v.http_listeners, {}) : lv.name], try(rv.http_listener_name, ""))
+      for rk, rv in try(local.gateway_effective_request_routing_rules[k], {}) : rk
+      if !contains([for lk, lv in try(local.gateway_effective_http_listeners[k], {}) : lv.name], try(rv.http_listener_name, ""))
     ]) > 0
   ]
 
   gateways_with_invalid_https_cert_mapping = [
     for k, v in local.gateways : k
     if length([
-      for lk, lv in try(v.http_listeners, {}) : lk
+      for lk, lv in try(local.gateway_effective_http_listeners[k], {}) : lk
       if lower(try(lv.protocol, "")) == "https" && !contains(
         length(try(v.ssl_certificates, {})) > 0 ? [for ck, cv in try(v.ssl_certificates, {}) : cv.name] : (
           try(v.ssl_certificate_key_vault_secret_id, null) != null ? [try(v.ssl_certificate_name, "web-cert")] : []
@@ -175,15 +284,15 @@ module "app_gateway" {
 
   frontend_ports = try(each.value.frontend_ports, {})
 
-  backend_address_pools = try(each.value.backend_address_pools, {})
+  backend_address_pools = try(local.gateway_effective_backend_address_pools[each.key], {})
 
-  probes = try(each.value.probes, null)
+  probes = length(try(local.gateway_effective_probes[each.key], {})) > 0 ? local.gateway_effective_probes[each.key] : null
 
-  backend_http_settings = try(each.value.backend_http_settings, {})
+  backend_http_settings = try(local.gateway_effective_backend_http_settings[each.key], {})
 
-  http_listeners = try(each.value.http_listeners, {})
+  http_listeners = try(local.gateway_effective_http_listeners[each.key], {})
 
-  request_routing_rules = try(each.value.request_routing_rules, {})
+  request_routing_rules = try(local.gateway_effective_request_routing_rules[each.key], {})
 
   ssl_certificates = length(try(each.value.ssl_certificates, {})) > 0 ? each.value.ssl_certificates : (
     try(each.value.ssl_certificate_key_vault_secret_id, null) != null ? {
