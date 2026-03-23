@@ -31,7 +31,6 @@
             "private_ip_address_allocation": "Static"
         }
     },
-    "backend_ip_addresses": [],
     "frontend_ports": {
         "http": {
             "name": "port-80",
@@ -42,98 +41,6 @@
             "port": 443
         }
     },
-    "backend_address_pools": {
-        "web_pool": {
-            "name": "pool-web"
-        }
-    },
-    "backend_http_settings": {
-        "web_http": {
-            "name": "bhs-web-http",
-            "port": 80,
-            "protocol": "Http",
-            "cookie_based_affinity": "Disabled",
-            "request_timeout": 30
-        }
-    },
-    "http_listeners": {
-        "http_listener": {
-            "name": "lst-http",
-            "frontend_port_name": "port-443",
-            "frontend_ip_configuration_name": "agw-prod-01-feip",
-            "protocol": "Https",
-            "ssl_certificate_name": "appgw-test-cert-02",
-            "require_sni": true,
-            "host_names": [
-                "app.contoso.com"
-            ]
-        },
-        "http_listener_private": {
-            "name": "lst-http-private",
-            "frontend_port_name": "port-80",
-            "frontend_ip_configuration_name": "agw-prod-01-feip-private",
-            "protocol": "Http",
-            "host_names": [
-                "internal.app.contoso.com"
-            ]
-        },
-        "https_listener": {
-            "name": "lst-https",
-            "frontend_port_name": "port-443",
-            "frontend_ip_configuration_name": "agw-prod-01-feip",
-            "protocol": "Https",
-            "ssl_certificate_name": "appgw-test-cert01",
-            "require_sni": true,
-            "host_names": [
-                "app2.contoso.com"
-            ]
-        }
-    },
-    "request_routing_rules": {
-        "web_rule": {
-            "name": "rr-web",
-            "rule_type": "Basic",
-            "http_listener_name": "lst-http",
-            "backend_address_pool_name": "pool-web",
-            "backend_http_settings_name": "bhs-web-http",
-            "priority": 100
-        },
-        "web_rule_private": {
-            "name": "rr-web-private",
-            "rule_type": "Basic",
-            "http_listener_name": "lst-http-private",
-            "backend_address_pool_name": "pool-web",
-            "backend_http_settings_name": "bhs-web-http",
-            "priority": 110
-        },
-        "web_rule_https_alt": {
-            "name": "rr-web-https-alt",
-            "rule_type": "Basic",
-            "http_listener_name": "lst-https",
-            "backend_address_pool_name": "pool-web",
-            "backend_http_settings_name": "bhs-web-http",
-            "priority": 120
-        }
-    },
-    "probes": {
-        "web": {
-            "name": "probe-web",
-            "protocol": "Http",
-            "path": "/health",
-            "interval": 30,
-            "timeout": 30,
-            "unhealthy_threshold": 3,
-            "pick_host_name_from_backend_http_settings": true,
-            "match": {
-                "status_code": [
-                    "200-399"
-                ]
-            }
-        }
-    },
-    "host_names": [
-        "app.contoso.com"
-    ],
     "ssl_certificates": {
         "cert_web_default": {
             "name": "appgw-test-cert-02",
@@ -142,6 +49,132 @@
         "cert_web_alt": {
             "name": "appgw-test-cert01",
             "key_vault_secret_id": "https://safewaykvwestus.vault.azure.net/secrets/appgw-test-cert01"
+        }
+    },
+    "listener_bundles": {
+        "public_https": {
+            "listener": {
+                "name": "lst-http",
+                "frontend_port_name": "port-443",
+                "frontend_ip_configuration_name": "agw-prod-01-feip",
+                "protocol": "Https",
+                "ssl_certificate_name": "appgw-test-cert-02",
+                "require_sni": true,
+                "host_names": [
+                    "app.contoso.com"
+                ]
+            },
+            "backend_address_pool": {
+                "name": "pool-web-public"
+            },
+            "backend_http_settings": {
+                "name": "bhs-web-public",
+                "port": 80,
+                "protocol": "Http",
+                "cookie_based_affinity": "Disabled",
+                "request_timeout": 30
+            },
+            "probe": {
+                "name": "probe-web-public",
+                "protocol": "Http",
+                "path": "/health",
+                "interval": 30,
+                "timeout": 30,
+                "unhealthy_threshold": 3,
+                "pick_host_name_from_backend_http_settings": true,
+                "match": {
+                    "status_code": [
+                        "200-399"
+                    ]
+                }
+            },
+            "request_routing_rule": {
+                "name": "rr-web",
+                "rule_type": "Basic",
+                "priority": 100
+            }
+        },
+        "private_http": {
+            "listener": {
+                "name": "lst-http-private",
+                "frontend_port_name": "port-80",
+                "frontend_ip_configuration_name": "agw-prod-01-feip-private",
+                "protocol": "Http",
+                "host_names": [
+                    "internal.app.contoso.com"
+                ]
+            },
+            "backend_address_pool": {
+                "name": "pool-web-private"
+            },
+            "backend_http_settings": {
+                "name": "bhs-web-private",
+                "port": 80,
+                "protocol": "Http",
+                "cookie_based_affinity": "Disabled",
+                "request_timeout": 30
+            },
+            "probe": {
+                "name": "probe-web-private",
+                "protocol": "Http",
+                "path": "/health",
+                "interval": 30,
+                "timeout": 30,
+                "unhealthy_threshold": 3,
+                "pick_host_name_from_backend_http_settings": true,
+                "match": {
+                    "status_code": [
+                        "200-399"
+                    ]
+                }
+            },
+            "request_routing_rule": {
+                "name": "rr-web-private",
+                "rule_type": "Basic",
+                "priority": 110
+            }
+        },
+        "public_https_alt": {
+            "listener": {
+                "name": "lst-https",
+                "frontend_port_name": "port-443",
+                "frontend_ip_configuration_name": "agw-prod-01-feip",
+                "protocol": "Https",
+                "ssl_certificate_name": "appgw-test-cert01",
+                "require_sni": true,
+                "host_names": [
+                    "app2.contoso.com"
+                ]
+            },
+            "backend_address_pool": {
+                "name": "pool-web-alt"
+            },
+            "backend_http_settings": {
+                "name": "bhs-web-alt",
+                "port": 80,
+                "protocol": "Http",
+                "cookie_based_affinity": "Disabled",
+                "request_timeout": 30
+            },
+            "probe": {
+                "name": "probe-web-alt",
+                "protocol": "Http",
+                "path": "/health",
+                "interval": 30,
+                "timeout": 30,
+                "unhealthy_threshold": 3,
+                "pick_host_name_from_backend_http_settings": true,
+                "match": {
+                    "status_code": [
+                        "200-399"
+                    ]
+                }
+            },
+            "request_routing_rule": {
+                "name": "rr-web-https-alt",
+                "rule_type": "Basic",
+                "priority": 120
+            }
         }
     },
     "autoscale_configuration": {
