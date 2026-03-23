@@ -77,11 +77,11 @@
             "probe": {
                 "name": "probe-web-public",
                 "protocol": "Http",
+                "host": "app.contoso.com",
                 "path": "/health",
                 "interval": 30,
                 "timeout": 30,
                 "unhealthy_threshold": 3,
-                "pick_host_name_from_backend_http_settings": true,
                 "match": {
                     "status_code": [
                         "200-399"
@@ -117,11 +117,11 @@
             "probe": {
                 "name": "probe-web-private",
                 "protocol": "Http",
+                "host": "internal.app.contoso.com",
                 "path": "/health",
                 "interval": 30,
                 "timeout": 30,
                 "unhealthy_threshold": 3,
-                "pick_host_name_from_backend_http_settings": true,
                 "match": {
                     "status_code": [
                         "200-399"
@@ -159,11 +159,11 @@
             "probe": {
                 "name": "probe-web-alt",
                 "protocol": "Http",
+                "host": "app2.contoso.com",
                 "path": "/health",
                 "interval": 30,
                 "timeout": 30,
                 "unhealthy_threshold": 3,
-                "pick_host_name_from_backend_http_settings": true,
                 "match": {
                     "status_code": [
                         "200-399"

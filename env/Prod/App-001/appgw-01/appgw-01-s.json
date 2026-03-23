@@ -50,11 +50,11 @@
             "probe": {
                 "name": "probe-web",
                 "protocol": "Http",
+                "host": "app.contoso.com",
                 "path": "/health",
                 "interval": 30,
                 "timeout": 30,
                 "unhealthy_threshold": 3,
-                "pick_host_name_from_backend_http_settings": true,
                 "match": {
                     "status_code": [
                         "200-399"
